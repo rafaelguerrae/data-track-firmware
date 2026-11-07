@@ -6,9 +6,13 @@
 
 // MQTT
 #define MQTT_HOST "broker.example.com"
-#define MQTT_PORT 1883
+#define MQTT_PORT 8883
 #define MQTT_USER ""
 #define MQTT_PASS ""
+
+// NTP
+#define NTP_SERVER "pool.ntp.org"
+#define NTP_TIMEOUT_MS 15000
 #define MQTT_CLIENT_ID "data-track-esp32-01"
 #define MQTT_TOPIC "data-track/esp32-01/temperature"
 

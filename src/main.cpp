@@ -1,21 +1,29 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <time.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_MAX31865.h>
 
 #include "config.h"
+#include "ca_cert.h"
 
 static const char *TOPIC_STATUS = MQTT_TOPIC "/status";
 static const char *TOPIC_FAULT = MQTT_TOPIC "/fault";
 
-WiFiClient wifiClient;
+WiFiClientSecure wifiClient;
 PubSubClient mqtt(wifiClient);
 Adafruit_MAX31865 rtd(PIN_RTD_CS, PIN_RTD_MOSI, PIN_RTD_MISO, PIN_RTD_SCK);
 
 unsigned long lastPublish = 0;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastWifiAttempt = 0;
+unsigned long ntpStart = 0;
+bool ntpStarted = false;
+
+// Data mínima aceita como "relógio sincronizado" (01/01/2024).
+static const time_t MIN_VALID_EPOCH = 1704067200;
 
 void connectWifi() {
     if (WiFi.status() == WL_CONNECTED) return;
@@ -25,8 +33,26 @@ void connectWifi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
 
+// Sincroniza o relógio via NTP sem bloquear o loop(). Retorna true quando a data é válida.
+bool clockSynced() {
+    if (time(nullptr) >= MIN_VALID_EPOCH) return true;
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    if (!ntpStarted) {
+        ntpStarted = true;
+        ntpStart = millis();
+        Serial.printf("Sincronizando relógio via NTP (%s)...\n", NTP_SERVER);
+        configTime(0, 0, NTP_SERVER);
+    } else if (millis() - ntpStart >= NTP_TIMEOUT_MS) {
+        Serial.println("NTP sem resposta, tentando novamente...");
+        ntpStarted = false;
+    }
+    return false;
+}
+
 void connectMqtt() {
     if (WiFi.status() != WL_CONNECTED || mqtt.connected()) return;
+    if (!clockSynced()) return;
     if (millis() - lastMqttAttempt < 5000 && lastMqttAttempt != 0) return;
     lastMqttAttempt = millis();
 
@@ -79,6 +105,7 @@ void setup() {
 
     rtd.begin(RTD_WIRES);
     WiFi.mode(WIFI_STA);
+    wifiClient.setCACert(MQTT_CA_CERT);
     mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
